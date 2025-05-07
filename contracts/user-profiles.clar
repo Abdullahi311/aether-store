@@ -80,45 +80,6 @@
   )
 )
 
-;; Calculate weighted review impact based on reviewer's reputation and verification status
-(define-private (calculate-review-weight (reviewer-principal principal))
-  (let (
-    (reviewer-info (unwrap! (map-get? user-profiles { user: reviewer-principal }) u1))
-    (reputation-factor (/ (get reputation reviewer-info) u100))
-    (verification-factor (if (get verified reviewer-info) VERIFICATION-WEIGHT u1))
-  )
-    (min (mul reputation-factor verification-factor) u10)  ;; Cap maximum weight at 10
-  )
-)
-
-;; Update user's reputation and tier after a review
-(define-private (update-user-reputation (user principal) (rating-change int))
-  (let (
-    (user-info (unwrap! (map-get? user-profiles { user: user }) ERR-NOT-FOUND))
-    (current-reputation (get reputation user-info))
-    (new-reputation-raw (+ current-reputation (if (> rating-change 0) 
-                                                (to-uint rating-change) 
-                                                u0)))
-    (new-reputation (if (< rating-change 0) 
-                       (if (> (abs rating-change) current-reputation)
-                           MIN-REPUTATION
-                           (- current-reputation (to-uint (abs rating-change))))
-                       (min new-reputation-raw MAX-REPUTATION)))
-    (new-tier (calculate-tier new-reputation))
-    (review-count (+ (get review-count user-info) u1))
-  )
-    (map-set user-profiles
-      { user: user }
-      (merge user-info {
-        reputation: new-reputation,
-        tier: new-tier,
-        review-count: review-count
-      })
-    )
-    (ok new-reputation)
-  )
-)
-
 ;; Check if a principal is an authorized verifier
 (define-private (is-authorized-verifier (verifier principal))
   (default-to false (get active (map-get? authorized-verifiers { verifier: verifier })))
@@ -178,72 +139,6 @@
     )
     
     (ok true)
-  )
-)
-
-;; Verify a user's identity (can only be called by authorized verifiers)
-(define-public (verify-user (user principal))
-  (let (
-    (verifier tx-sender)
-    (user-info (unwrap! (map-get? user-profiles { user: user }) ERR-NOT-FOUND))
-  )
-    ;; Check if caller is an authorized verifier
-    (asserts! (is-authorized-verifier verifier) ERR-UNAUTHORIZED)
-    
-    ;; Update user's verification status
-    (map-set user-profiles
-      { user: user }
-      (merge user-info { verified: true })
-    )
-    
-    ;; Update verified users count if this is a new verification
-    (if (not (get verified user-info))
-      (var-set total-verified-users (+ (var-get total-verified-users) u1))
-      true
-    )
-    
-    ;; Award verification bonus to reputation
-    (update-user-reputation user u50)
-    
-    (ok true)
-  )
-)
-
-;; Submit a review for another user
-(define-public (submit-review (reviewee principal) (rating uint) (comment (string-utf8 256)))
-  (let (
-    (reviewer tx-sender)
-    (timestamp block-height)
-  )
-    ;; Ensure reviewer exists
-    (asserts! (is-some (map-get? user-profiles { user: reviewer })) ERR-NOT-FOUND)
-    
-    ;; Ensure reviewee exists
-    (asserts! (is-some (map-get? user-profiles { user: reviewee })) ERR-NOT-FOUND)
-    
-    ;; Cannot review yourself
-    (asserts! (not (is-eq reviewer reviewee)) ERR-SELF-REVIEW)
-    
-    ;; Validate rating is between 1 and 5
-    (asserts! (and (>= rating u1) (<= rating u5)) ERR-INVALID-INPUT)
-    
-    ;; Store the review
-    (map-set user-reviews
-      { reviewer: reviewer, reviewee: reviewee }
-      {
-        rating: rating,
-        comment: comment,
-        timestamp: timestamp
-      }
-    )
-    
-    ;; Calculate impact on reputation
-    (let (
-      (weight (calculate-review-weight reviewer))
-      (rating-change (- (* (to-int rating) (to-int weight)) (to-int u300)))  ;; normalize to positive/negative
-    )
-      (update-user-reputation reviewee rating-change)
-    )
   )
 )
 
@@ -320,15 +215,4 @@
 ;; Check if a user exists
 (define-read-only (user-exists (user principal))
   (is-some (map-get? user-profiles { user: user }))
-)
-
-;; Get the reputation threshold for a specific tier
-(define-read-only (get-tier-threshold (tier uint))
-  (match tier
-    u1 TIER-1-THRESHOLD
-    u2 TIER-2-THRESHOLD
-    u3 TIER-3-THRESHOLD
-    u4 TIER-4-THRESHOLD
-    u0
-  )
 )

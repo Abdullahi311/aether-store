@@ -4,18 +4,6 @@ authors = []
 description = ""
 telemetry = false
 requirements = []
-[contracts.aether-token]
-path = "contracts/aether-token.clar"
-depends_on = []
-
-[contracts.escrow]
-path = "contracts/escrow.clar"
-depends_on = []
-
-[contracts.marketplace]
-path = "contracts/marketplace.clar"
-depends_on = []
-
 [contracts.user-profiles]
 path = "contracts/user-profiles.clar"
 depends_on = []
